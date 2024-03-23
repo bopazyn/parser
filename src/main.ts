@@ -86,12 +86,14 @@ type ParseResult<T> =
 
 type ParserLabel = string;
 
-interface Parser<T> {
+export interface Parser<T> {
   parserFn: (input: InputState) => ParseResult<T>;
   label: ParserLabel;
 }
 
-const setParserLabel = <T, >(parser: Parser<T>, label: ParserLabel): Parser<T> => ({
+export type ParserValue<T> = T extends Parser<infer TV> ? TV : never;
+
+export const setParserLabel = <T, >(parser: Parser<T>, label: ParserLabel): Parser<T> => ({
   ...parser,
   label,
   parserFn: (input) => {
@@ -100,7 +102,7 @@ const setParserLabel = <T, >(parser: Parser<T>, label: ParserLabel): Parser<T> =
   }
 });
 
-const satisfy = (predicate: (s: string) => boolean, label: ParserLabel): Parser<string> => ({
+export const satisfy = (predicate: (s: string) => boolean, label: ParserLabel): Parser<string> => ({
   label,
   parserFn: (input) => {
     const [nextInput, c] = nextCharacter(input);
@@ -119,15 +121,14 @@ const satisfy = (predicate: (s: string) => boolean, label: ParserLabel): Parser<
   },
 })
 
-const parseCharacter = (c: string): Parser<string> =>
+export const parseCharacter = (c: string): Parser<string> =>
   satisfy(x => x === c, `parse ${c}`);
 
-const runParserOnInput = <T, >(parser: Parser<T>, input: InputState) =>
+export const runParserOnInput = <T, >(parser: Parser<T>, input: InputState) =>
   parser.parserFn(input);
 
-const runParser = <T, >(parser: Parser<T>, str: string) =>
+export const runParser = <T, >(parser: Parser<T>, str: string) =>
   parser.parserFn(fromStr(str));
-
 
 if (import.meta.vitest) {
   const {test, expect} = import.meta.vitest;
@@ -178,7 +179,7 @@ if (import.meta.vitest) {
   });
 }
 
-const bindParser = <T1, T2>(parser: Parser<T1>, func: (arg: T1) => Parser<T2>): Parser<T2> => ({
+export const bindParser = <T1, T2>(parser: Parser<T1>, func: (arg: T1) => Parser<T2>): Parser<T2> => ({
   label: `unknown`,
   parserFn: (input) => {
     const res = runParserOnInput(parser, input);
@@ -190,7 +191,7 @@ const bindParser = <T1, T2>(parser: Parser<T1>, func: (arg: T1) => Parser<T2>): 
   },
 });
 
-const andThen = <T1, T2>(parser1: Parser<T1>, parser2: Parser<T2>): Parser<[T1, T2]> => {
+export const andThen = <T1, T2>(parser1: Parser<T1>, parser2: Parser<T2>): Parser<[T1, T2]> => {
   const label = `${parser1.label} && ${parser2.label}`;
   const newParser = bindParser(parser1, r1 =>
     bindParser(parser2, r2 =>
@@ -251,7 +252,7 @@ if (import.meta.vitest) {
   });
 }
 
-const orElse = <T1, T2>(parser1: Parser<T1>, parser2: Parser<T2>): Parser<T1 | T2> => ({
+export const orElse = <T1, T2>(parser1: Parser<T1>, parser2: Parser<T2>): Parser<T1 | T2> => ({
   label: `${parser1.label} || ${parser2.label}`,
   parserFn: (input) => {
     const res = runParserOnInput(parser1, input);
@@ -297,8 +298,8 @@ if (import.meta.vitest) {
   });
 }
 
-const choice = <T, >(parsers: Parser<T>[]): Parser<T> => parsers.reduce(orElse);
-const anyOf = (characters: string[]) => {
+export const choice = <T, >(parsers: Parser<T>[]): Parser<T> => parsers.reduce(orElse);
+export const anyOf = (characters: string[]) => {
   const newParser = choice(characters.map(parseCharacter));
   return setParserLabel(newParser, `anyOf (${characters.join(',')})`)
 };
@@ -306,10 +307,10 @@ const anyOf = (characters: string[]) => {
 const range = (start: number, end: number): number[] =>
   Array.from({length: end - start + 1}, (_, k) => k + start);
 
-const parseLowercase = satisfy(x => /[a-z]/.test(x), 'lowercase letter');
-const parseUppercase = satisfy(x => /[A-Z]/.test(x), 'uppercase letter');
-const parseDigit = satisfy(x => /\d/.test(x), 'digit');
-const parseWhiteCharacter = satisfy(x => /\s/.test(x), 'digit');
+export const parseLowercase = satisfy(x => /[a-z]/.test(x), 'lowercase letter');
+export const parseUppercase = satisfy(x => /[A-Z]/.test(x), 'uppercase letter');
+export const parseDigit = satisfy(x => /\d/.test(x), 'digit');
+export const parseWhiteCharacter = satisfy(x => /\s/.test(x), 'white character');
 
 if (import.meta.vitest) {
   const {test, expect} = import.meta.vitest;
@@ -375,7 +376,7 @@ if (import.meta.vitest) {
   });
 }
 
-const mapParser = <T, TRes>(parser: Parser<T>, func: (arg: T) => TRes): Parser<TRes> => {
+export const mapParser = <T, TRes>(parser: Parser<T>, func: (arg: T) => TRes): Parser<TRes> => {
   const fParser = (arg: T) => returnParser(func(arg));
   return bindParser(parser, fParser);
 };
@@ -400,27 +401,28 @@ if (import.meta.vitest) {
   });
 }
 
-const returnParser = <T, >(val: T): Parser<T> => ({
+export const returnParser = <T, >(val: T): Parser<T> => ({
   label: 'unknown',
   parserFn: (input) => ({type: 'Success', val, rest: input})
 });
 
-const applyParser = <T, TRes>(parser: Parser<((arg: T) => TRes)>, val: Parser<T>) =>
+export const applyParser = <T, TRes>(parser: Parser<((arg: T) => TRes)>, val: Parser<T>) =>
   bindParser(parser,
     f => bindParser(val,
       x => returnParser(f(x))
     )
   );
 
-const lift2Parser = <T1, T2, TRes>(func: (arg1: T1) => (arg2: T2) => TRes) =>
-  (p1: Parser<T1>) => (p2: Parser<T2>) => {
-    const parser = returnParser(func);
-    return applyParser(applyParser(parser, p1), p2);
-  };
+export const lift2Parser = <T1, T2, TRes>(func: (arg1: T1) => (arg2: T2) => TRes) =>
+  (p1: Parser<T1>) =>
+    (p2: Parser<T2>) => {
+      const parser = returnParser(func);
+      return applyParser(applyParser(parser, p1), p2);
+    };
 
 const addParser = lift2Parser((a: number) => (b: number) => a + b);
 
-const sequence = <T, >(parsers: Parser<T>[]): Parser<T[]> => {
+export const sequence = <T, >(parsers: Parser<T>[]): Parser<T[]> => {
   const con = (head: T) => (tail: T[]) => [head, ...tail];
   const conP = lift2Parser(con);
   if (parsers.length === 0) {
@@ -454,7 +456,7 @@ if (import.meta.vitest) {
   });
 }
 
-const many = <T, >(parser: Parser<T>): Parser<T[]> => ({
+export const many = <T, >(parser: Parser<T>): Parser<T[]> => ({
   label: `many(${parser.label})`,
   parserFn: (input) => {
     const firstResult = runParserOnInput(parser, input);
@@ -505,7 +507,7 @@ if (import.meta.vitest) {
   });
 }
 
-const many1 = <T, >(parser: Parser<T>): Parser<T[]> => {
+export const many1 = <T, >(parser: Parser<T>): Parser<T[]> => {
   const newParser = bindParser(parser, h =>
     bindParser(many(parser), t =>
       returnParser([h, ...t])
@@ -533,10 +535,10 @@ if (import.meta.vitest) {
   });
 }
 
-const opt = <T, >(parser: Parser<T>): Parser<T | null> =>
+export const opt = <T, >(parser: Parser<T>): Parser<T | null> =>
   orElse(parser, returnParser(null));
 
-const parseString = (str: string): Parser<string> => {
+export const parseString = (str: string): Parser<string> => {
   const characterParsers = str.split('').map(parseCharacter);
   const parser = sequence(characterParsers);
   return setParserLabel(mapParser(parser, x => x.join('')), `parse ${str}`);
@@ -562,91 +564,39 @@ if (import.meta.vitest) {
   });
 }
 
-const parseInteger = setParserLabel(
-  mapParser(
-    sequence<unknown>([
-      opt(parseCharacter('-')),
-      many1(parseDigit),
-    ]), ([sign, digits]) => Number([sign, ...digits as string[]].join(''))
-  ), 'integer');
+export const sepBy = <TP, TS>(parser: Parser<TP>, separator: Parser<TS>): Parser<TP[]> => {
+  const pair = mapParser(andThen(separator, parser), x => x[1]);
+  const newParser = andThen(parser, many(pair));
+  return mapParser(newParser, ([p, m]) => [p, ...m]);
+};
 
-if (import.meta.vitest) {
-  const {test, expect} = import.meta.vitest;
+export const between = <TL, T, TR>(left: Parser<TL>, mid: Parser<T>, right: Parser<TR>): Parser<T> => {
+  const newParser = andThen(left, andThen(mid, right))
+  return mapParser(newParser, ([l, [m, r]]) => m);
+};
 
-  test('parseInteger-negative', () => {
-    const result = runParser(parseInteger, '-33abc');
-    expect(result).toEqual({
-      type: 'Success',
-      val: -33,
-      rest: {
-        lines: ['-33abc'],
-        position: {
-          line: 0,
-          column: 3,
-        },
+export const createParserForwardedToRef = <T, >(): [Parser<T>, { current: Parser<T> }] => {
+  const dummyParser: Parser<T> = {
+    parserFn: (input) => ({
+      type: 'Failure',
+      position: {
+        line: 0,
+        column: 0,
+        currentLine: '',
       },
-    });
-  });
+      parser: 'dummy parser',
+      error: 'Unfixed forwarded parser',
+    }),
+    label: 'unknown',
+  };
 
-  test('parseInteger-positive', () => {
-    const result = runParser(parseInteger, '12abc');
-    expect(result).toEqual({
-      type: 'Success',
-      val: 12,
-      rest: {
-        lines: ['12abc'],
-        position: {
-          line: 0,
-          column: 2,
-        },
-      },
-    });
-  });
-}
+  const ref = {
+    current: dummyParser,
+  };
 
-const parseFloat = setParserLabel(
-  mapParser<any, number>(
-    sequence<unknown>([
-      opt(parseCharacter('-')),
-      many1(parseDigit),
-      sequence<unknown>([
-        parseCharacter('.'),
-        many1(parseDigit),
-      ]),
-    ]), ([sign, digitsBeforeDot, [dot, digitsAfterDot]]) => Number([sign, ...digitsBeforeDot as string[], ...[dot, ...digitsAfterDot]].join(''))
-  ), 'float');
-
-
-if (import.meta.vitest) {
-  const {test, expect} = import.meta.vitest;
-
-  test('parseFloat-negative', () => {
-    const result = runParser(parseFloat, '-33.22');
-    expect(result).toEqual({
-      type: 'Success',
-      val: -33.22,
-      rest: {
-        lines: ['-33.22'],
-        position: {
-          line: 0,
-          column: 6,
-        },
-      },
-    });
-  });
-
-  test('parseFloat-positive', () => {
-    const result = runParser(parseFloat, '123.45');
-    expect(result).toEqual({
-      type: 'Success',
-      val: 123.45,
-      rest: {
-        lines: ['123.45'],
-        position: {
-          line: 0,
-          column: 6,
-        },
-      },
-    });
-  });
-}
+  const wrappedParser: Parser<T> = {
+    parserFn: (input) => runParserOnInput(ref.current, input),
+    label: 'unknown',
+  };
+  return [wrappedParser, ref];
+};
